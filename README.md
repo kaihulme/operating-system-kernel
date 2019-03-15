@@ -164,7 +164,7 @@ background material before starting.
     supporting pre-emptive multi-tasking instead: complete this task.
     Success criteria. Initialise the kernel so the user programsP3andP4are automatically executed
     (noting that neither program invokesyield), and thus demonstrate their concurrent execution.
-(b) The kernel developed in lab. worksheet #3 used a special-purpose scheduling algorithm: it could
+- (b) The kernel developed in lab. worksheet #3 used a special-purpose scheduling algorithm: it could
     do so as the result of assuming a fixed number of user processes exist. Improve on this by a)
     generalising the implementation so it deals with any number of processes (i.e.,any n, vs. only
     n=2), and b) capitalising on the concept of priorities somehow, using a different scheduling
