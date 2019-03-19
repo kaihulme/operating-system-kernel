@@ -43,6 +43,7 @@
  */
 
 typedef int pid_t;
+typedef int priority_t;
 
 typedef enum {
   STATUS_CREATED,
@@ -57,9 +58,11 @@ typedef struct {
 } ctx_t;
 
 typedef struct {
-     pid_t    pid;
-  status_t status;
-     ctx_t    ctx;
+           pid_t          pid;
+        status_t       status;
+           ctx_t          ctx;
+      priority_t basePriority;
+      priority_t     priority;
 } pcb_t;
 
 #endif

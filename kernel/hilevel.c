@@ -11,8 +11,6 @@ pcb_t pcb[ 3 ]; pcb_t* current = NULL;
 
 void dispatch( ctx_t* ctx, pcb_t* prev, pcb_t* next ) {
 
-  //PL011_putc( UART0, 'D',      true );
-
   char prev_pid = '?', next_pid = '?';
 
   if( NULL != prev ) {
@@ -34,44 +32,110 @@ void dispatch( ctx_t* ctx, pcb_t* prev, pcb_t* next ) {
     current = next;                             // update   executing index   to P_{next}
 
   return;
-
 }
 
-void schedule( ctx_t* ctx ) {
+void printPriorities() {
+  char pP3 = pcb[0].priority + 48;
+  char pP4 = pcb[1].priority + 48;
+  char pP5 = pcb[2].priority + 48;
 
-  int length = sizeof(pcb)/sizeof(pcb[0]);
+  PL011_putc( UART0, '(',      true );
+  PL011_putc( UART0, pP3, true );
+  PL011_putc( UART0, ',',      true );
+  PL011_putc( UART0, pP4, true );
+  PL011_putc( UART0, ',',      true );
+  PL011_putc( UART0, pP5, true );
+  PL011_putc( UART0, ')',      true );
+}
 
-  int current_i = (current->pid) % length;
-  int next_i = (current->pid + 1) % length;
+int findHighestPriority( int length ) {
 
-  dispatch(ctx, &pcb[current_i], &pcb[next_i]);
+  int highP = 0, highP_index = 0;
 
-  pcb[ ci ].status = STATUS_READY;
-  pcb[ ni ].status = STATUS_EXECUTING;
+  for ( int i = 0; i < length; i++ ) {
+    if ( pcb[ i ].priority > highP ) {
+      highP       = pcb[ i ].priority;
+      highP_index = i;
+    }
+  }
+
+  return highP_index;
+}
+
+void updatePriorities( int current_i, int length ) {
+
+  for ( int i=0; i<length; i++ ) {
+    if ( i != current_i ) pcb[ i ].priority++;
+    else                  pcb[ i ].priority = pcb[ i ].basePriority;
+  }
 
   return;
+}
 
+void schedule_priorityBased( ctx_t* ctx ) {
+
+  //PL011_putc( UART0, '\n',      true );
+
+  int length    = sizeof(pcb)/sizeof(pcb[0]);
+  int current_i = (current->pid)    % length;
+  int next_i    = findHighestPriority(length);
+
+  if ( pcb[ next_i ].priority > pcb[ current_i ].priority) {
+
+    dispatch(ctx, &pcb[ current_i ], &pcb[ next_i ]);
+
+    pcb[ current_i ].status = STATUS_READY;
+    pcb[ next_i ].status    = STATUS_EXECUTING;
+
+    current_i = next_i;
+
+  }
+
+  //printPriorities();
+
+  updatePriorities( current_i, length );
+
+  //printPriorities();
+  //PL011_putc( UART0, '\n',      true );
+
+  return;
+}
+
+void schedule_roundRobin( ctx_t* ctx ) {
+
+  int length    = sizeof(pcb)/sizeof(pcb[0]);
+  int current_i = (current->pid)     % length;
+  int next_i    = (current->pid + 1) % length;
+
+  dispatch( ctx, &pcb[current_i], &pcb[next_i] );
+
+  pcb[ current_i ].status = STATUS_READY;
+  pcb[ next_i ].status    = STATUS_EXECUTING;
+
+  return;
 }
 
 void schedule_twoTasksOnly( ctx_t* ctx ) {
 
   //PL011_putc( UART0, 'C',      true );
 
-  if     ( current->pid == pcb[ 0 ].pid ) {
+  if        ( current->pid == pcb[ 0 ].pid ) {
+
     dispatch( ctx, &pcb[ 0 ], &pcb[ 1 ] );      // context switch P_3 -> P_4
 
     pcb[ 0 ].status = STATUS_READY;             // update   execution status  of P_3
     pcb[ 1 ].status = STATUS_EXECUTING;         // update   execution status  of P_4
-  }
-  else if( current->pid == pcb[ 1 ].pid ) {
+
+  } else if ( current->pid == pcb[ 1 ].pid ) {
+
     dispatch( ctx, &pcb[ 1 ], &pcb[ 0 ] );      // context switch P_2 -> P_1
 
     pcb[ 1 ].status = STATUS_READY;             // update   execution status  of P_4
     pcb[ 0 ].status = STATUS_EXECUTING;         // update   execution status  of P_3
+
   }
 
   return;
-
 }
 
 extern void     main_P3();
@@ -83,8 +147,6 @@ extern uint32_t tos_P5;
 
 void hilevel_handler_rst( ctx_t* ctx              ) {
 
-  //PL011_putc( UART0, 'R', true );
-
   /* Initialise two PCBs, representing user processes stemming from execution
    * of two user programs.  Note in each case that
    *
@@ -94,25 +156,31 @@ void hilevel_handler_rst( ctx_t* ctx              ) {
    */
 
   memset( &pcb[ 0 ], 0, sizeof( pcb_t ) );     // initialise 0-th PCB = P_3
-  pcb[ 0 ].pid      = 3;
-  pcb[ 0 ].status   = STATUS_CREATED;
-  pcb[ 0 ].ctx.cpsr = 0x50;
-  pcb[ 0 ].ctx.pc   = ( uint32_t )( &main_P3 );
-  pcb[ 0 ].ctx.sp   = ( uint32_t )( &tos_P3  );
+  pcb[ 0 ].pid          = 3;
+  pcb[ 0 ].status       = STATUS_CREATED;
+  pcb[ 0 ].ctx.cpsr     = 0x50;
+  pcb[ 0 ].ctx.pc       = ( uint32_t )( &main_P3 );
+  pcb[ 0 ].ctx.sp       = ( uint32_t )( &tos_P3  );
+  pcb[ 0 ].basePriority = 7;
+  pcb[ 0 ].priority     = pcb[ 0 ].basePriority;
 
   memset( &pcb[ 1 ], 0, sizeof( pcb_t ) );     // initialise 1-st PCB = P_4
-  pcb[ 1 ].pid      = 4;
-  pcb[ 1 ].status   = STATUS_CREATED;
-  pcb[ 1 ].ctx.cpsr = 0x50;
-  pcb[ 1 ].ctx.pc   = ( uint32_t )( &main_P4 );
-  pcb[ 1 ].ctx.sp   = ( uint32_t )( &tos_P4  );
+  pcb[ 1 ].pid          = 4;
+  pcb[ 1 ].status       = STATUS_CREATED;
+  pcb[ 1 ].ctx.cpsr     = 0x50;
+  pcb[ 1 ].ctx.pc       = ( uint32_t )( &main_P4 );
+  pcb[ 1 ].ctx.sp       = ( uint32_t )( &tos_P4  );
+  pcb[ 1 ].basePriority = 3;
+  pcb[ 1 ].priority     = pcb[ 1 ].basePriority;
 
   memset( &pcb[ 2 ], 0, sizeof( pcb_t ) );     // initialise 2-nd PCB = P_5
-  pcb[ 2 ].pid      = 5;
-  pcb[ 2 ].status   = STATUS_CREATED;
-  pcb[ 2 ].ctx.cpsr = 0x50;
-  pcb[ 2 ].ctx.pc   = ( uint32_t )( &main_P5 );
-  pcb[ 2 ].ctx.sp   = ( uint32_t )( &tos_P5  );
+  pcb[ 2 ].pid          = 5;
+  pcb[ 2 ].status       = STATUS_CREATED;
+  pcb[ 2 ].ctx.cpsr     = 0x50;
+  pcb[ 2 ].ctx.pc       = ( uint32_t )( &main_P5 );
+  pcb[ 2 ].ctx.sp       = ( uint32_t )( &tos_P5  );
+  pcb[ 2 ].basePriority = 1;
+  pcb[ 2 ].priority     = pcb[ 2 ].basePriority;
 
   /* Once the PCBs are initialised, we arbitrarily select the one in the 0-th
    * PCB to be executed: there is no need to preserve the execution context,
@@ -158,7 +226,7 @@ void hilevel_handler_irq( ctx_t* ctx ) {
 
     //PL011_putc( UART0, 'T', true );
 
-    schedule( ctx ); TIMER0->Timer1IntClr = 0x01;
+    schedule_priorityBased( ctx ); TIMER0->Timer1IntClr = 0x01;
 
   }
 
