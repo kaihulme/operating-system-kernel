@@ -28,17 +28,34 @@ lolevel_handler_rst: bl    int_init                @ initialise interrupt vector
                      msr   spsr, r0                @ move     USR mode        CPSR
                      ldmia sp, { r0-r12, sp, lr }^ @ restore  USR mode registers
                      add   sp, sp, #60             @ update   SVC mode SP
+
                      movs  pc, lr                  @ return from interrupt
 
 lolevel_handler_irq: sub   lr, lr, #4              @ correct return address
-                     stmfd sp!, { r0-r3, ip, lr }  @ save    caller-save registers
 
+                     msr   cpsr, #0xD2             @ enter IRQ mode with IRQ and FIQ interrupts disabled
+                     ldr   sp, =tos_irq            @ initialise IRQ mode stack
+
+                     sub   sp, sp, #60             @ update   SVC  mode stack
+                     stmia sp, { r0-r12, sp, lr }^ @ preserve USR registers
+                     mrs   r0, spsr                @ move     USR        CPSR
+                     stmdb sp!, { r0, lr }         @ store    USR PC and CPSR
+
+                     mov   r0, sp                  @ set    high-level C function arg. = SP
                      bl    hilevel_handler_irq     @ invoke high-level C function
 
-                     ldmfd sp!, { r0-r3, ip, lr }  @ restore caller-save registers
+                     ldmia sp!, { r0, lr }         @ load     USR mode PC and CPSR
+                     msr   spsr, r0                @ move     USR mode        CPSR
+                     ldmia sp, { r0-r12, sp, lr }^ @ restore  USR mode registers
+                     add   sp, sp, #60             @ update   SVC mode SP
+
                      movs  pc, lr                  @ return from interrupt
 
 lolevel_handler_svc: sub   lr, lr, #0              @ correct return address
+
+                     msr   cpsr, #0xD3             @ enter SVC mode with IRQ and FIQ interrupts disabled
+                     ldr   sp, =tos_svc            @ initialise SVC mode stack
+
                      sub   sp, sp, #60             @ update   SVC mode stack
                      stmia sp, { r0-r12, sp, lr }^ @ preserve USR registers
                      mrs   r0, spsr                @ move     USR        CPSR
@@ -53,4 +70,5 @@ lolevel_handler_svc: sub   lr, lr, #0              @ correct return address
                      msr   spsr, r0                @ move     USR mode        CPSR
                      ldmia sp, { r0-r12, sp, lr }^ @ restore  USR mode registers
                      add   sp, sp, #60             @ update   SVC mode SP
+
                      movs  pc, lr                  @ return from interrupt
