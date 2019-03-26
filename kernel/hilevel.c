@@ -7,7 +7,7 @@
 
 #include "hilevel.h"
 
-pcb_t pcb[ 4 ]; pcb_t* current = NULL;
+pcb_t pcb[ PCB_LENGTH ]; pcb_t* current = NULL;
 
 void dispatch( ctx_t* ctx, pcb_t* prev, pcb_t* next ) {
 
@@ -51,16 +51,18 @@ void printPriorities() {
   PL011_putc( UART0, ')',      true );
 }
 
-int findHighestPriority( int highestP_index, int length ) {
+int findHighestPriority() {
 
-  int highestP = 0; //, highestP_index = 0;
+  // assume console has the highest priority
+  int highestP = pcb[ 0 ].priority, highestP_index = 0;
 
-  for ( int i = 0; i < length; i++ ) {
+  // for each user program
+  for ( int i = 1; i < PCB_LENGTH; i++ ) {
 
     // PL011_putc( UART0, '\n', true );
     // char ci = i + 48;
     // char pidi = pcb[i].pid + 48;
-    // PL011_putc( UART0, 'P', true );
+    // PL011_putc( UART0, 'P', true );gnome
     // PL011_putc( UART0, 'I', true );
     // PL011_putc( UART0, 'D', true );
     // PL011_putc( UART0, ' ', true );
@@ -69,19 +71,21 @@ int findHighestPriority( int highestP_index, int length ) {
     // PL011_putc( UART0, pidi, true );
     // PL011_putc( UART0, '\n', true );
 
-    if ( pcb[ i ].pid >= 0 && pcb[ i ].priority > highestP ) {
+    // if program is ready (pid >= 1) & priority is highest
+    if ( pcb[ i ].pid >= 1 && pcb[ i ].priority > highestP ) {
       highestP       = pcb[ i ].priority;
       highestP_index = i;
+    } else {
     }
   }
 
   return highestP_index;
 }
 
-void updatePriorities( int current_i, int length ) {
+void updatePriorities( int current_i ) {
 
-  for ( int i=0; i<length; i++ ) {
-    if ( pcb[ i ].pid >= 0 && i != current_i ) pcb[ i ].priority++;
+  for ( int i=0; i<PCB_LENGTH; i++ ) {
+    if ( pcb[ i ].pid >= 1 && i != current_i ) pcb[ i ].priority++;
     else                                       pcb[ i ].priority = pcb[ i ].basePriority;
   }
 
@@ -90,9 +94,8 @@ void updatePriorities( int current_i, int length ) {
 
 void schedule_priorityBased( ctx_t* ctx ) {
 
-  int length    = sizeof(pcb)/sizeof(pcb[0]);
-  int current_i = (current->pid) % length;
-  int next_i    = findHighestPriority( current_i, length );
+  int current_i = ((current->pid) % PCB_LENGTH) - 1;
+  int next_i    = findHighestPriority();
 
   // PL011_putc( UART0, '\n', true );
   // char ci = current_i + 48;
@@ -115,7 +118,7 @@ void schedule_priorityBased( ctx_t* ctx ) {
 
   }
 
-  updatePriorities( current_i, length );
+  updatePriorities( current_i );
 
   return;
 }
@@ -158,8 +161,7 @@ void schedule_twoTasksOnly( ctx_t* ctx ) {
 }
 
 void setRemainingEmpty( int n ) {
-  int length    = sizeof(pcb)/sizeof(pcb[0]);
-  for ( int i=n; i<length; i++ ) {
+  for ( int i=n; i<PCB_LENGTH; i++ ) {
     pcb [ i ].pid = -1;
   }
   return;
@@ -167,21 +169,24 @@ void setRemainingEmpty( int n ) {
 
 extern void     main_console();
 extern uint32_t tos_console;
+uint32_t tos;
 
 void hilevel_handler_rst( ctx_t* ctx              ) {
 
-  // PL011_putc( UART0, 'R', true );
+  PL011_putc( UART0, 'R', true );
 
   // initialise console
 
   memset( &pcb[ 0 ], 0, sizeof( pcb_t ) );     // initialise 0-th PCB = P_3
-  pcb[ 0 ].pid          = 0;
+  pcb[ 0 ].pid          = 1;
   pcb[ 0 ].status       = STATUS_CREATED;
   pcb[ 0 ].ctx.cpsr     = 0x50;
   pcb[ 0 ].ctx.pc       = ( uint32_t )( &main_console );
   pcb[ 0 ].ctx.sp       = ( uint32_t )( &tos_console  );
   pcb[ 0 ].basePriority = 1;
   pcb[ 0 ].priority     = pcb[ 0 ].basePriority;
+
+  tos = tos_console;
 
   setRemainingEmpty( 1 );
 
@@ -204,6 +209,11 @@ void hilevel_handler_rst( ctx_t* ctx              ) {
 
 }
 
+void doNothing() {
+  // do nothing (for breakpoints)
+  return;
+}
+
 void hilevel_handler_irq( ctx_t* ctx ) {
 
   // get interrupt identifier
@@ -220,6 +230,17 @@ void hilevel_handler_irq( ctx_t* ctx ) {
   GICC0->EOIR = id;
 
   return;
+}
+
+int getPCBPosition() {
+  return 1;
+}
+
+pid_t generatePID( pid_t pid ) {
+  for ( int i=0; i<PCB_LENGTH; i++ ) {
+    if ( pid == pcb[ i ].pid) pid = generatePID( pid++ );
+  }
+  return pid;
 }
 
 void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
@@ -248,9 +269,67 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC fork()
     case 0x03: {
 
-      PL011_putc( UART0, 'F', true );
+      PL011_putc( UART0, 'F',      true );
+
+      // get PCB position and create unique PID
+      int   child_i   = getPCBPosition();
+      pid_t child_pid = generatePID( 0 );
+
+      // get tos and stack pointers
+      uint32_t child_tos = tos + 0x00001000;
+      uint32_t child_sp  = ctx->sp + 0x00001000;
+
+      // copy state of parent into child
+      ctx_t child_ctx;
+      memcpy( &child_ctx, &ctx, sizeof(ctx_t) );
+
+      // initialise child in PCB with gpr[0] = 0
+      memset( &pcb[ child_i ], 0, sizeof( pcb_t ) );
+      pcb[ child_i ].pid          = child_pid;
+      pcb[ child_i ].status       = STATUS_CREATED;
+      pcb[ child_i ].ctx          = child_ctx;
+      pcb[ child_i ].ctx.gpr[ 0 ] = 0;
+      pcb[ child_i ].ctx.sp       = child_sp;
+      pcb[ child_i ].tos          = child_tos;
+      pcb[ child_i ].basePriority = 1;
+      pcb[ child_i ].priority     = pcb[ child_i ].basePriority;
+
+      // copy stack of parent into child
+      uint32_t stack_size = tos - ctx->sp;
+      memcpy((void *) child_sp, (const void*)ctx->sp, stack_size);
+
+      // update tos
+      tos = child_tos;
+
+      // return from fork with parent-> child_pid
+      ctx->gpr[ 0 ] = child_pid;
+
+      doNothing();
+
+      PL011_putc( UART0, 'G',      true );
+
       break;
 
+    }
+
+    // SVC exit()
+    case 0x04: {
+
+
+
+      break;
+
+    }
+
+    // SVC exec()
+    case 0x05: {
+
+      PL011_putc( UART0, 'E',      true );
+
+      ctx->pc = ctx->gpr[ 0 ];
+      ctx->sp = tos;
+
+      break;
     }
 
     // SVC unknown / unsupported

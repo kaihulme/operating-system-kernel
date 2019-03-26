@@ -25,13 +25,4 @@ SECTIONS {
   /* allocate stack for console      */
   .           = . + 0x00001000;
   tos_console = .;
-  /* allocate stack for P3 */
-  .       = . + 0x00001000;
-  tos_P3  = .;
-  /* allocate stack for P4 */
-  .       = . + 0x00001000;
-  tos_P4  = .;
-  /* allocate stack for P5 */
-  .       = . + 0x00001000;
-  tos_P5  = .;
 }

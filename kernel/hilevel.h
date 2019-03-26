@@ -29,6 +29,8 @@
 #include "lolevel.h"
 #include     "int.h"
 
+#define PCB_LENGTH 4 // console + user programs (P3,4,5)
+
 /* The kernel source code is made simpler and more consistent by using
  * some human-readable type definitions:
  *
@@ -61,6 +63,7 @@ typedef struct {
            pid_t          pid;
         status_t       status;
            ctx_t          ctx;
+        uint32_t          tos;
       priority_t basePriority;
       priority_t     priority;
 } pcb_t;
