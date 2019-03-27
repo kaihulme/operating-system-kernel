@@ -1,14 +1,14 @@
 /* Copyright (C) 2017 Daniel Page <csdsp@bristol.ac.uk>
  *
- * Use of this source code is restricted per the CC BY-NC-ND license, a copy of 
- * which can be found via http://creativecommons.org (and should be included as 
+ * Use of this source code is restricted per the CC BY-NC-ND license, a copy of
+ * which can be found via http://creativecommons.org (and should be included as
  * LICENSE.txt within the associated archive or repository).
  */
 
 #include "console.h"
 
-/* The following functions are special-case versions of a) writing, and 
- * b) reading a string from the UART (the latter case returning once a 
+/* The following functions are special-case versions of a) writing, and
+ * b) reading a string from the UART (the latter case returning once a
  * carriage return character has been read, or a limit is reached).
  */
 
@@ -21,7 +21,7 @@ void puts( char* x, int n ) {
 void gets( char* x, int n ) {
   for( int i = 0; i < n; i++ ) {
     x[ i ] = PL011_getc( UART1, true );
-    
+
     if( x[ i ] == '\x0A' ) {
       x[ i ] = '\x00'; break;
     }
@@ -29,14 +29,14 @@ void gets( char* x, int n ) {
 }
 
 /* Since we lack a *real* loader (as a result of also lacking a storage
- * medium to store program images), the following function approximates 
+ * medium to store program images), the following function approximates
  * one: given a program name from the set of programs statically linked
  * into the kernel image, it returns a pointer to the entry point.
  */
 
-extern void main_P3(); 
-extern void main_P4(); 
-extern void main_P5(); 
+extern void main_P3();
+extern void main_P4();
+extern void main_P5();
 
 void* load( char* x ) {
   if     ( 0 == strcmp( x, "P3" ) ) {
@@ -52,7 +52,7 @@ void* load( char* x ) {
   return NULL;
 }
 
-/* The behaviour of a console process can be summarised as an infinite 
+/* The behaviour of a console process can be summarised as an infinite
  * loop over three main steps, namely
  *
  * 1. write a command prompt then read a command,
@@ -67,18 +67,18 @@ void* load( char* x ) {
  *    (i.e., the console) will continue as normal, whereas the child
  *    uses exec to replace the process image and thereby execute a
  *    different (named) program.  For example,
- *    
+ *
  *    execute P3
  *
  *    would execute the user program named P3.
  *
- * b. terminate <process ID> 
+ * b. terminate <process ID>
  *
  *    This command uses kill to send a terminate or SIG_TERM signal
  *    to a specific process (identified via the PID provided); this
  *    acts to forcibly terminate the process, vs. say that process
  *    using exit to terminate itself.  For example,
- *  
+ *
  *    terminate 3
  *
  *    would terminate the process whose PID is 3.
@@ -94,15 +94,18 @@ void main_console() {
       pid_t pid = fork();
 
       if( 0 == pid ) {
+
+        write(STDOUT_FILENO, "EXEC", 4);
+
         exec( load( strtok( NULL, " " ) ) );
       }
-    } 
+    }
     else if( 0 == strcmp( p, "terminate" ) ) {
       pid_t pid = atoi( strtok( NULL, " " ) );
       int   s   = atoi( strtok( NULL, " " ) );
 
       kill( pid, s );
-    } 
+    }
     else {
       puts( "unknown command\n", 16 );
     }

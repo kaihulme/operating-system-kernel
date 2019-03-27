@@ -6,23 +6,25 @@
  */
 
 SECTIONS {
-  /* assign load address (per  QEMU) */
+
+   /* assign load address (per QEMU) */
   .       =     0x70010000;
-  /* place text segment(s)           */
-  .text : { kernel/lolevel.o(.text) *(.text .rodata) }
-  /* place data segment(s)           */
-  .data : {                         *(.data        ) }
-  /* place bss  segment(s)           */
-  .bss  : {                         *(.bss         ) }
-  /* align       address (per AAPCS) */
+
+  .text : { kernel/lolevel.o(.text) *(.text .rodata) } /* place text segment(s) */
+  .data : {                         *(.data        ) } /* place data segment(s) */
+  .bss  : {                         *(.bss         ) } /* place bss  segment(s) */
+
+  /* align address (per AAPCS) */
   .           = ALIGN( 8 );
-  /* allocate stack for irq mode     */
-  .           = . + 0x00001000;
-  tos_irq     = .;
-  /* allocate stack for svc mode     */
-  .           = . + 0x00001000;
-  tos_svc     = .;
-  /* allocate stack for console      */
-  .           = . + 0x00001000;
-  tos_console = .;
+
+
+  .           = . + 0x00001000; /* allocate stack for IRQ mode */
+  tos_irq     = .;              /* assign TOS pointer for IRQ mode */
+
+  .           = . + 0x00001000; /* allocate stack for SVC mode */
+  tos_svc     = .;              /* assign TOS pointer for SVC mode */
+
+  .           = . + 0x00001000; /* allocate stack for console */
+  tos_console = .;              /* assign TOS pointer for console */
+
 }

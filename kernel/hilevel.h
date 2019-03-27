@@ -29,7 +29,8 @@
 #include "lolevel.h"
 #include     "int.h"
 
-#define PCB_LENGTH 4 // console + user programs (P3,4,5)
+#define PCB_LENGTH  4          // console + user programs (P3,4,5)
+#define P_STACKSIZE 0x00001000 // stack size for user processes
 
 /* The kernel source code is made simpler and more consistent by using
  * some human-readable type definitions:
