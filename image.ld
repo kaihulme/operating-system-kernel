@@ -14,6 +14,13 @@ SECTIONS {
   .data : {                         *(.data        ) } /* place data segment(s) */
   .bss  : {                         *(.bss         ) } /* place bss  segment(s) */
 
+  .heap : {
+                     end = .;
+             _heap_start = .;
+             .           = . + 0x00001000;
+             _heap_end   = .; 
+  }
+
   /* align address (per AAPCS) */
   .           = ALIGN( 8 );
 

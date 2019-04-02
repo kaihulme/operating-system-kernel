@@ -13,10 +13,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
 #include <string.h>
 
-#include "libc.h"
+#include <stdlib.h>
 
 // Include functionality relating to the platform.
 
@@ -32,21 +31,20 @@
 #define PCB_LENGTH  4          // console + user programs (P3,4,5)
 #define P_STACKSIZE 0x00001000 // stack size for user processes
 
-/* The kernel source code is made simpler and more consistent by using
- * some human-readable type definitions:
- *
- * - a type that captures a Process IDentifier (PID), which is really
- *   just an integer,
- * - an enumerated type that captures the status of a process, e.g.,
- *   whether it is currently executing,
- * - a type that captures each component of an execution context (i.e.,
- *   processor state) in a compatible order wrt. the low-level handler
- *   preservation and restoration prologue and epilogue, and
- * - a type that captures a process PCB.
- */
+#define SYS_YIELD     ( 0x00 )
+#define SYS_WRITE     ( 0x01 )
+#define SYS_READ      ( 0x02 )
+#define SYS_FORK      ( 0x03 )
+#define SYS_EXIT      ( 0x04 )
+#define SYS_EXEC      ( 0x05 )
+#define SYS_KILL      ( 0x06 )
+#define SYS_NICE      ( 0x07 )
 
 typedef int pid_t;
 typedef int priority_t;
+
+typedef struct process_tree   process_tree_t;
+typedef struct priority_list priority_list_t;
 
 typedef enum {
   STATUS_CREATED,
@@ -68,5 +66,16 @@ typedef struct {
       priority_t basePriority;
       priority_t     priority;
 } pcb_t;
+
+struct process_tree {
+                pcb_t process;
+  struct process_tree  *child;
+  struct process_tree   *next;
+};
+
+struct priority_list {
+        process_tree_t *process;
+  struct priority_list    *next;
+}
 
 #endif

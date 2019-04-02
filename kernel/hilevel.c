@@ -9,6 +9,46 @@
 
 pcb_t pcb[ PCB_LENGTH ]; pcb_t* current = NULL;
 
+process_tree_t* p_tree;
+
+/***************** PROCESS TREE FUNCTIONS **********************/
+
+process_tree_t * new_process( pcb_t process ) {
+
+  process_tree_t *new_process = malloc( sizeof( process_tree_t ) );
+
+  if ( new_process ) {
+    new_process->process = process;
+    new_process->child   = NULL;
+    new_process->next    = NULL;
+  }
+
+  return new_process;
+}
+
+process_tree_t * next_process( process_tree_t * p, pcb_t process) {
+
+  if  ( p == NULL ) { return NULL; }
+
+  while ( p->next ) { p = p->next; }
+
+  return (p->next = new_process( process ));
+
+}
+
+process_tree_t * child_process( process_tree_t * p, pcb_t process) {
+
+  if ( p == NULL) { return NULL; }
+
+  if ( p->child ) { return next_process( p->child, process ); }
+  else { return (p->child = new_process( process )); }
+
+}
+
+/***************** PRIORITY LIST FUNCTIONS **********************/
+
+///////////////////////////////////////////////////////////////////////////
+
 // performs a context switch (ctx: current context, prev: current process, next: next process)
 void dispatch( ctx_t* ctx, pcb_t* prev, pcb_t* next ) {
 
@@ -72,6 +112,17 @@ void agePriorities( int current_i ) {
 
   return;
 }
+
+// process_tree_t * ageTree( process_tree_t * p, pid_t current_pid ) {
+//
+//
+//
+//   if ( p->child == NULL && (p->process->pid != current_pid)) {
+//     return p;
+//   }
+//
+//
+// }
 
 // priority-based schedulling (ctx: current context)
 void schedule_priorityBased( ctx_t* ctx ) {
@@ -148,11 +199,18 @@ void hilevel_handler_rst( ctx_t* ctx ) {
     .ctx.sp       = ( uint32_t )( &tos_console  ), // sets console stack pointer to console top-of-stack pointer
     .basePriority =                            10, // sets console base priority
     .priority     =                            10  // sets console priority with age
-  }; memcpy( &pcb[ 0 ], &console, sizeof(pcb_t) ); // sets console in PCB
+  };
+
+  // memcpy( &pcb[ 0 ], &console, sizeof(pcb_t) ); // sets console in PCB
+
+  p_tree = new_process( console );
 
   tos = tos_console;                // updates top of stack pointer
-  setRemainingEmpty( 1 );           // marks remaining in pcb as empty
-  dispatch( ctx, NULL, &pcb[ 0 ] ); // dispatches console
+
+  //setRemainingEmpty( 1 );           // marks remaining in pcb as empty
+  dispatch( ctx, NULL, &p_tree->process ); // dispatches console
+
+  memcpy( ctx, &console.ctx, sizeof( ctx ) );
 
   TIMER0->Timer1Load  = 0x00100000; // select period = 2^20 ticks ~= 1 sec
   TIMER0->Timer1Ctrl  = 0x00000002; // select 32-bit timer
@@ -174,7 +232,7 @@ void hilevel_handler_irq( ctx_t* ctx ) {
 
   if( id == GIC_SOURCE_TIMER0 ) {   // if timer interrupt
     PL011_putc( UART0, 'T', true ); // print timer interrupt to qemu
-    schedule_priorityBased( ctx );  // call scheduller
+    //schedule_priorityBased( ctx );  // call scheduller
     TIMER0->Timer1IntClr = 0x01;    // reset timer interrupt
   }
 
@@ -213,10 +271,12 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       };
 
       memcpy( &child.ctx, ctx, sizeof(ctx_t) );        // copies current context into child
+      child.ctx.gpr[ 0 ] = 0;                 // return from fork in child -> 0
       child.ctx.sp = ctx->sp + P_STACKSIZE;            // sets stack pointer in child
-      memcpy( &pcb[ child_i], &child, sizeof(pcb_t) ); // sets child in PCB
 
-      pcb[ child_i ].ctx.gpr[ 0 ] = 0;                 // return from fork in child -> 0
+      //memcpy( &pcb[ child_i], &child, sizeof(pcb_t) ); // sets child in PCB
+      p_tree = child_process( p_tree, child);
+
       ctx->gpr[ 0 ]               = child_pid;         // return from fork in parent -> child_pid
       tos                        += P_STACKSIZE;       // updates top-of-stack pointer
 
@@ -242,6 +302,11 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC exit()
     case SYS_EXIT: {
 
+      // if ( ctx.gpr[ 0 ] == EXIT_SUCCESS ) {
+      //
+      //
+      //
+      // }
 
       break;
     }
