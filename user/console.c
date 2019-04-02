@@ -94,9 +94,6 @@ void main_console() {
       pid_t pid = fork();
 
       if( 0 == pid ) {
-
-        write(STDOUT_FILENO, "EXEC", 4);
-
         exec( load( strtok( NULL, " " ) ) );
       }
     }
