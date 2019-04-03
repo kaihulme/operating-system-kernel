@@ -9,7 +9,7 @@
 
 pcb_t pcb[ PCB_LENGTH ]; pcb_t* current = NULL;
 
-void writeStr( char* string ) {
+void printStr( char* string ) {
 
   for ( int i=0; i<strlen(string); i++ ) {
     PL011_putc( UART0, string[ i ], true );
@@ -18,11 +18,11 @@ void writeStr( char* string ) {
   return;
 }
 
-void writeInt( int n ) {
+void printInt( int n ) {
 
   char* string;
   itoa( string, n );
-  writeStr( string );
+  printStr( string );
 
   return;
 }
@@ -42,55 +42,49 @@ index_t findByPID( pid_t pid ) {
 index_t findFreePCB() {
 
   for ( index_t i=0; i<PCB_LENGTH; i++ ) {
-
-    // writeStr("\nPCB["); writeInt( i );
-
-    if ( pcb[ i ].status == STATUS_TERMINATED ) {
-      // writeStr("] FREE");
+    if ( pcb[ i ].status == STATUS_TERMINATED || pcb[ i ].pid < 0) {
       return i;
     }
-    else {
-      // writeStr("] USED");
-    }
-
   }
 
-  return 0;
+  return -1;
 }
 
 // generate unique PID for process
 pid_t generatePID() {
 
   for ( pid_t pid=1; pid<=PCB_LENGTH; pid++ ) { // 1 <= PID <= PCB_LENGTH
-    int instances = 0;                      // number of instances of that PID
+    int instances = 0;                          // number of instances of that PID
     for ( index_t i=0; i<PCB_LENGTH; i++ ) {    // for each in PCB
       if ( pcb [ i ].pid == pid ) {
         instances++;
       }
     } if ( instances == 0 ) {
-      return pid;                           // return unique PID
+      return pid;                               // return unique PID
     }
   }
 
-  return PCB_LENGTH;                  // returns final position (shouldn't happen)
+  return PCB_LENGTH; // returns final position (shouldn't happen)
 }
 
 // performs a context switch (ctx: current context, prev: current process, next: next process)
 void dispatch( ctx_t* ctx, pcb_t* prev, pcb_t* next ) {
 
-  char prev_pid = '?', next_pid = '?';
+  char p = '?';
+  char n = '?';
 
   if( NULL != prev ) {
     memcpy( &prev->ctx, ctx, sizeof( ctx_t ) );
-    prev_pid = '0' + prev->pid;
-  } if( NULL != next ) {
+    p = '0' + prev->pid;
+  }
+  if( NULL != next ) {
     memcpy( ctx, &next->ctx, sizeof( ctx_t ) );
-    next_pid = '0' + next->pid;
+    n = '0' + next->pid;
   }
 
-  writeStr( "\n[" );  PL011_putc( UART0, prev_pid, true );
-  writeStr( "->" ); PL011_putc( UART0, next_pid, true );
-  writeStr( "]\n" );
+  printStr( "\nContext Switch: [" );
+  PL011_putc( UART0, p, true ); printStr( "] -> [" );
+  PL011_putc( UART0, n, true ); printStr( "]   \n" );
 
   current = next;
 
@@ -100,34 +94,43 @@ void dispatch( ctx_t* ctx, pcb_t* prev, pcb_t* next ) {
 // prints priorities of tasks - for debugging
 void printProgram( index_t n ) {
 
-  writeStr("\n");
-
-  // print all user programs
-  if ( n == -1 ) {
-    for ( int i=1; i<PCB_LENGTH; i++ ) {
-      if ( pcb[i].status != STATUS_TERMINATED ) {
-        writeStr( "USER PCB[" );           writeInt( i );
-        writeStr( "] - PID: " );    writeInt( pcb[i].pid );
-        writeStr( ", PRIO: " );    writeInt( pcb[i].prio );
-        writeStr("\n");
-      }
-    }
-  }
-
   // print console
-  else if ( n == 0 ) {
-    writeStr("CNSL PCB[0] - PID: 1, PRIO: ");
-    writeInt( pcb[n].prio );
-    writeStr("\n");
+  if ( n == 0 ) {
+    printStr( "Console PCB[" );           printInt( n );
+    printStr( "] - PID: " );     printInt( pcb[n].pid );
+    printStr( ", Priority: " ); printInt( pcb[n].prio );
+    printStr("\n");
   }
 
   // print single user program
   else {
-    writeStr( "USER PCB[" );           writeInt( n );
-    writeStr( "] - PID: " );  writeInt( pcb[n].pid );
-    writeStr( ", PRIO: " );  writeInt( pcb[n].prio );
-    writeStr("\n");
+    printStr( "User PCB[" );              printInt( n );
+    printStr( "] - PID: " );     printInt( pcb[n].pid );
+    printStr( ", Priority: " ); printInt( pcb[n].prio );
+    printStr("\n");
   }
+
+  return;
+}
+
+void printProcessTable() {
+
+  printStr("            PROCESS TABLE: active pid = "); printInt( current->pid );
+  printStr("\n _________________________________________________\n");
+  printStr("| Program Type | PCB index | PID | Priority | Age |\n");
+  printStr("|--------------|-----------|-----|----------|-----|\n");
+  for ( int i=0; i<PCB_LENGTH; i++ ) {
+    if ( pcb[i].status != STATUS_TERMINATED && pcb[i].pid > 0 ) {
+      if ( i == 0 ) { printStr( "|   console    |     " ); }
+      else { printStr( "|     user     |     " ); }
+      printInt( i ); printStr( "     |  " ); printInt( pcb[i].pid );
+      printStr( "  |    " ); printInt( pcb[i].prio );
+      if (pcb[i].prio < 10 ) { printStr("     |  "); }
+      else { printStr("    |  "); }
+      printInt( pcb[i].prio - pcb[i].basePrio ); printStr( "  |\n" );
+    }
+  }
+  printStr("|______________|___________|_____|__________|_____|\n");
 
   return;
 }
@@ -153,7 +156,7 @@ int findHighestPriority() {
 void agePriorities( index_t current_i ) {
 
   for ( index_t i=0; i<PCB_LENGTH; i++ ) {
-    if ( pcb[ i ].status != STATUS_TERMINATED) {
+    if ( pcb[ i ].status != STATUS_TERMINATED && pcb[ i ].pid > -1 ) {
       if ( i != current_i ) pcb[ i ].prio++;
       else                  pcb[ i ].prio = pcb[ i ].basePrio;
     }
@@ -168,8 +171,7 @@ void schedule_priorityBased( ctx_t* ctx ) {
   index_t current_i = (current->pid)-1;
   index_t next_i    = findHighestPriority();
 
-  printProgram( 0 );
-  printProgram( -1 );
+  printProcessTable();
 
   if ( current_i != next_i ) {
     dispatch(ctx, &pcb[ current_i ], &pcb[ next_i ]);
@@ -224,12 +226,43 @@ void setRemainingEmpty( index_t i ) {
   return;
 }
 
-void terminate( index_t i ) {
+void defrag_pcb() {
 
-  writeStr( "\nTERMINATING PCB" ); writeInt( i );
+  // printStr("\nDEFRAG_PCB() CALL\n");
 
-  pcb[ i ].pid    =                -1;
-  pcb[ i ].status = STATUS_TERMINATED;
+  for ( index_t i=1; i<PCB_LENGTH-1; i++ ) {
+
+    // printStr("\nPCB[");  printInt(i);
+    // printStr("] PID: "); printInt( pcb[i].pid );
+    // printStr("\nPCB[");  printInt(i+1);
+    // printStr("] PID: "); printInt( pcb[i+1].pid );
+    // printStr("\n");
+
+    if ( pcb[ i ].status == STATUS_TERMINATED && pcb[ i+1 ].pid >= 0 ) {
+
+      // printStr("\nMOVE PCB["); printInt(i+1); printStr("] to PCB["); printInt(i); printStr("]\n");
+
+      memcpy( &pcb[ i ], &pcb[ i+1 ], sizeof( pcb_t ) );
+      pcb[ i+1 ].pid    =                -1;
+      pcb[ i+1 ].status = STATUS_TERMINATED;
+      pcb[ i+1 ].prio   =                 0;
+
+    }
+
+  }
+
+  return;
+}
+
+void terminate( index_t index ) {
+
+  printStr( "\nTerminating PCB[" ); printInt( index ); printStr("]\n");
+
+  pcb[ index ].pid    =                -1;
+  pcb[ index ].status = STATUS_TERMINATED;
+  pcb[ index ].prio   =                 0;
+
+  defrag_pcb();
 
   return;
 }
@@ -241,12 +274,12 @@ uint32_t        tos;            // pointer to current top-of-stack
 // high-level reset-interrupt handler (ctx: current context)
 void hilevel_handler_rst( ctx_t* ctx ) {
 
-  writeStr( "\nRESET\n" );
+  printStr( "\nRESET...\n" );
 
   setRemainingEmpty( 0 );
 
   pid_t console_pid = generatePID();
-  index_t console_i   = findFreePCB();
+  index_t console_i = findFreePCB();
 
   pcb_t console = {                                // creates console process
     .pid          =                   console_pid, // sets console PID to 1
@@ -258,7 +291,7 @@ void hilevel_handler_rst( ctx_t* ctx ) {
     .prio     =                            10  // sets console priority with age
   }; memcpy( &pcb[ console_i ], &console, sizeof(pcb_t) ); // sets console in PCB
 
-  writeStr( "\nCONSOLE CREATED: \n" ); printProgram( console_i );
+  printStr( "\nConsole process created: \n" ); printProgram( console_i );
 
   tos = tos_console;                        // updates top of stack pointer
   setRemainingEmpty( 1 );                    // marks remaining in pcb as empty
@@ -283,7 +316,7 @@ void hilevel_handler_irq( ctx_t* ctx ) {
   uint32_t id = GICC0->IAR;            // get interrupt identifier
 
   if( id == GIC_SOURCE_TIMER0 ) {      // if timer interrupt
-    // writeStr( "\nTIMER\n"); // print timer interrupt to qemu
+    printStr( "\ntimer ~~>\n"); // print timer interrupt to qemu
     schedule_priorityBased( ctx );     // call scheduller
     TIMER0->Timer1IntClr = 0x01;       // reset timer interrupt
   }
@@ -302,27 +335,33 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC fork()
     case SYS_FORK: {
 
-      writeStr( "\nSYS_FORK" );
+      printStr( "\nSYS_FORK" );
 
-      pid_t   child_pid = generatePID();               // generates unique PID
-      index_t child_i   = findFreePCB();               // calculates position in PCB
+      pid_t   child_pid = generatePID();                  // generates unique PID
+      index_t child_i   = findFreePCB();                  // calculates position in PCB
 
-      pcb_t child = {                                  // creates new child
-        .pid          = child_pid,                     // sets childs PID
-        .status       = STATUS_CREATED,                // sets childs status to created
-        .basePrio = 5,                             // sets childs base priority
-        .prio     = 5                              // sets childs priority with age
+      if ( child_i < 0 ) {
+        printStr( "\nERROR: PCB is full \n" );            // break if PCB is full
+        break;
+      }
+
+      pcb_t child = {                                     // creates new child
+        .pid      = child_pid,                            // sets childs PID
+        .status   = STATUS_CREATED,                       // sets childs status to created
+        .basePrio = 5,                                    // sets childs base priority
+        .prio     = 5                                     // sets childs priority with age
       };
 
-      memcpy( &child.ctx, ctx, sizeof(ctx_t) );        // copies current context into child
-      child.ctx.sp = ctx->sp + P_STACKSIZE;            // sets stack pointer in child
-      memcpy( &pcb[ child_i], &child, sizeof(pcb_t) ); // sets child in PCB
+      memcpy( &child.ctx, ctx, sizeof(ctx_t) );           // copies current context into child
+      child.ctx.sp = ctx->sp + P_STACKSIZE;               // sets stack pointer in child
+      memcpy( &pcb[ child_i ], &child, sizeof( pcb_t ) ); // sets child in PCB
 
-      pcb[ child_i ].ctx.gpr[ 0 ] = 0;                 // return from fork in child -> 0
-      ctx->gpr[ 0 ]               = child_pid;         // return from fork in parent -> child_pid
-      tos                        += P_STACKSIZE;       // updates top-of-stack pointer
+      pcb[ child_i ].ctx.gpr[ 0 ] = 0;                    // return from fork in child -> 0
+      ctx->gpr[ 0 ]               = child_pid;            // return from fork in parent -> child_pid
+      tos                        += P_STACKSIZE;          // updates top-of-stack pointer
 
-      writeStr( "\nNEW USER PROGRAM CREATED: \n" ); printProgram( child_i );
+      printStr( "\nSUCCESS: user program created \n" );
+      printProgram( child_i );
 
       break;
     }
@@ -330,7 +369,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC exec()
     case SYS_EXEC: {
 
-      writeStr( "SYS_EXEC\n" );
+      printStr( "SYS_EXEC\n" );
 
       ctx->pc = ctx->gpr[ 0 ]; // updates childs PC
       ctx->sp = tos;           // updates stack pointer
@@ -341,7 +380,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC kill()
     case SYS_KILL: {
 
-      writeStr( "SYS_KILL\n\n\n" );
+      printStr( "SYS_KILL\n" );
 
       pid_t pid           =        ctx->gpr[ 0 ];
       index_t       index =     findByPID( pid );
@@ -360,6 +399,9 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
             terminate( i );
           }
         }
+      } else {
+        printStr( "\nERROR: process not found \n" );    // break if PCB is full
+        break;
       }
 
       break;
@@ -368,7 +410,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC exit()
     case SYS_EXIT: {
 
-      writeStr( "SYS_EXIT\n" );
+      printStr( "SYS_EXIT\n" );
 
       if ( ctx->gpr[ 0 ] == EXIT_SUCCESS ) {
 
