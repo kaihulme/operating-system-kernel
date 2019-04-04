@@ -28,21 +28,6 @@
 
 #include "lolevel.h"
 
-#define SYS_YIELD     ( 0x00 )
-#define SYS_WRITE     ( 0x01 )
-#define SYS_READ      ( 0x02 )
-#define SYS_FORK      ( 0x03 )
-#define SYS_EXIT      ( 0x04 )
-#define SYS_EXEC      ( 0x05 )
-#define SYS_KILL      ( 0x06 )
-#define SYS_NICE      ( 0x07 )
-
-#define EXIT_SUCCESS  ( 0 )
-#define EXIT_FAILURE  ( 1 )
-
-#define SIG_TERM      ( 0x00 )
-#define SIG_QUIT      ( 0x01 )
-
 #define PCB_LENGTH    ( 4 )          // console + user programs (P3,4,5)
 #define P_STACKSIZE   ( 0x00001000 ) // stack size for user processes
 

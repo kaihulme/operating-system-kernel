@@ -1,7 +1,7 @@
 /* Copyright (C) 2017 Daniel Page <csdsp@bristol.ac.uk>
  *
- * Use of this source code is restricted per the CC BY-NC-ND license, a copy of 
- * which can be found via http://creativecommons.org (and should be included as 
+ * Use of this source code is restricted per the CC BY-NC-ND license, a copy of
+ * which can be found via http://creativecommons.org (and should be included as
  * LICENSE.txt within the associated archive or repository).
  */
 
@@ -14,13 +14,14 @@
 
 // Define a type that that captures a Process IDentifier (PID).
 
-typedef int pid_t;
+typedef int  pid_t;
+typedef int pipe_t;
 
 /* The definitions below capture symbolic constants within these classes:
  *
  * 1. system call identifiers (i.e., the constant used by a system call
  *    to specify which action the kernel should take),
- * 2. signal identifiers (as used by the kill system call), 
+ * 2. signal identifiers (as used by the kill system call),
  * 3. status codes for exit,
  * 4. standard file descriptors (e.g., for read and write system calls),
  * 5. platform-specific constants, which may need calibration (wrt. the
@@ -30,14 +31,19 @@ typedef int pid_t;
  * to act as a limited model of similar concepts.
  */
 
-#define SYS_YIELD     ( 0x00 )
-#define SYS_WRITE     ( 0x01 )
-#define SYS_READ      ( 0x02 )
-#define SYS_FORK      ( 0x03 )
-#define SYS_EXIT      ( 0x04 )
-#define SYS_EXEC      ( 0x05 )
-#define SYS_KILL      ( 0x06 )
-#define SYS_NICE      ( 0x07 )
+#define SYS_YIELD      ( 0x00 )
+#define SYS_WRITE      ( 0x01 )
+#define SYS_READ       ( 0x02 )
+#define SYS_FORK       ( 0x03 )
+#define SYS_EXIT       ( 0x04 )
+#define SYS_EXEC       ( 0x05 )
+#define SYS_KILL       ( 0x06 )
+#define SYS_NICE       ( 0x07 )
+#define SYS_EXEC_CHILD ( 0x08 )
+#define SYS_PIPE_OPEN  ( 0x09 )
+#define SYS_PIPE_WRITE ( 0x10 )
+#define SYS_PIPE_READ  ( 0x11 )
+
 
 #define SIG_TERM      ( 0x00 )
 #define SIG_QUIT      ( 0x01 )
@@ -73,5 +79,13 @@ extern void exec( const void* x );
 extern int  kill( pid_t pid, int x );
 // for process identified by pid, set  priority to x
 extern void nice( pid_t pid, int x );
+
+extern void exec_child( const void* x, pipe_t pipe );
+
+extern pipe_t pipe_open();
+
+extern pipe_t pipe_write( pipe_t pipe, int pipe_signal );
+
+extern int pipe_read( pipe_t pipe );
 
 #endif
