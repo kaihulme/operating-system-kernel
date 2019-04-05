@@ -28,8 +28,20 @@
 
 #include "lolevel.h"
 
-#define PCB_LENGTH    ( 4 )          // console + user programs (P3,4,5)
+#define PCB_LENGTH    ( 10 )         // max no. of processes
+#define PFDS_LENGTH   ( 1 )          // max no. of pipes
 #define P_STACKSIZE   ( 0x00001000 ) // stack size for user processes
+
+// direction
+#define OPEN   ( 0 )
+#define WRITE  ( 1 )
+#define READ  ( -1 )
+
+// type
+#define CONSOLE     ( 10 )
+#define USER        ( 11 )
+#define WAITER      ( 12 )
+#define PHILOSOPHER ( 13 )
 
 /* The kernel source code is made simpler and more consistent by using
  * some human-readable type definitions:
@@ -44,9 +56,11 @@
  * - a type that captures a process PCB.
  */
 
-typedef int    index_t;
-typedef int      pid_t;
-typedef int     prio_t;
+typedef int     index_t;
+typedef int       pid_t;
+typedef int      prio_t;
+typedef int direction_t;
+typedef int   program_t;
 
 typedef enum {
   STATUS_CREATED,
@@ -54,19 +68,36 @@ typedef enum {
   STATUS_EXECUTING,
   STATUS_WAITING,
   STATUS_TERMINATED
-} status_t;
+} pcb_status_t;
+
+typedef enum {
+  STATUS_OPEN,
+  STATUS_WAIT,
+  STATUS_WRITE,
+  STATUS_READ,
+  STATUS_CLOSED
+} pipe_status_t;
 
 typedef struct {
   uint32_t cpsr, pc, gpr[ 13 ], sp, lr;
 } ctx_t;
 
 typedef struct {
-           pid_t          pid;
-        status_t       status;
-           ctx_t          ctx;
-        uint32_t          tos;
-          prio_t     basePrio;
-          prio_t         prio;
+       program_t     type;
+           pid_t      pid;
+    pcb_status_t   status;
+           ctx_t      ctx;
+        uint32_t      tos;
+          prio_t basePrio;
+          prio_t     prio;
 } pcb_t;
+
+typedef struct {
+             int         data;
+           pid_t   writer_end;
+           pid_t   reader_end;
+     direction_t    direction;
+   pipe_status_t       status;
+} pipe_t;
 
 #endif

@@ -8,8 +8,8 @@
 #include "hilevel.h"
 
 // mechanisms for storing processes and pipes between them
-pcb_t pcb[ PCB_LENGTH ]; pcb_t* current = NULL;
-pipe_t pipes[1];
+pcb_t pcb[ PCB_LENGTH ]; pipe_t pipes[ PFDS_LENGTH ];
+pcb_t* current = NULL;
 
 // prints a string to UART (string: string to print to UART)
 void printStr( char* string ) {
@@ -155,6 +155,24 @@ void printProcessTable() {
   return;
 }
 
+void printPipe( pfd_t pfd ) {
+
+  printStr( "\nPipe[" );                    printInt( pfd );
+  printStr( "]: Data: " );    printInt( pipes[ pfd ].data );
+  printStr( " Writer-end: " ); printInt( pipes[ pfd ].writer_end );
+  printStr( " Reader-end: " );  printInt( pipes[ pfd ].reader_end );
+
+  printStr( ", Status: " );
+
+  if      ( pipes[ pfd ].status == STATUS_OPEN )      printStr( "OPEN\n" );
+  else if ( pipes[ pfd ].status == STATUS_READ )      printStr( "READ\n" );
+  else if ( pipes[ pfd ].status == STATUS_WRITE )    printStr( "WRITE\n" );
+  else if ( pipes[ pfd ].status == STATUS_CLOSED )  printStr( "CLOSED\n" );
+  else                                             printStr( "UNKNOWN\n" );
+
+  return;
+}
+
 // finds highest priority of active tasks in PCB
 int findHighestPriority() {
 
@@ -192,6 +210,8 @@ void schedule_priorityBased( ctx_t* ctx ) {
   index_t next_i    = findHighestPriority();
 
   printProcessTable();
+
+  printPipe( 0 );
 
   if ( current_i != next_i ) {
     dispatch(ctx, &pcb[ current_i ], &pcb[ next_i ]);
@@ -291,13 +311,14 @@ void hilevel_handler_rst( ctx_t* ctx ) {
   index_t console_i = findFreePCB();                                      // gets next free position in PCB
 
   pcb_t console = {                                                       // creates console process
+    .type         =                       CONSOLE,                        // sets type to console
     .pid          =                   console_pid,                        // sets console PID to 1
     .status       =                STATUS_CREATED,                        // sets console status to created
     .ctx.cpsr     =                          0x50,                        // sets console to SVC mode with IRQ & FIQ enabled
     .ctx.pc       = ( uint32_t )( &main_console ),                        // sets console PC to main()
     .ctx.sp       = ( uint32_t )( &tos_console  ),                        // sets console stack pointer to console top-of-stack pointer
-    .basePrio =                            10,                            // sets console base priority
-    .prio     =                            10                             // sets console priority with age
+    .basePrio     =                            10,                        // sets console base priority
+    .prio         =                            10                         // sets console priority with age
   }; memcpy( &pcb[ console_i ], &console, sizeof(pcb_t) );                // sets console in PCB
 
   printStr( "\nConsole process created: \n" ); printProgram( console_i ); // prints console to UART
@@ -315,6 +336,14 @@ void hilevel_handler_rst( ctx_t* ctx ) {
   GICD0->ISENABLER1  |= 0x00000010;                                       // enables timer interrupt
   GICC0->CTLR         = 0x00000001;                                       // enables GIC interface
   GICD0->CTLR         = 0x00000001;                                       // enables GIC distributor
+
+  for ( pfd_t pfd=0; pfd<PFDS_LENGTH; pfd++ ) {
+    pipes[ pfd ].data       =             0;
+    pipes[ pfd ].writer_end =            -1;
+    pipes[ pfd ].reader_end =            -1;
+    pipes[ pfd ].direction  =             0;
+    pipes[ pfd ].status     = STATUS_CLOSED;
+  }
 
   return;
 }
@@ -334,6 +363,10 @@ void hilevel_handler_irq( ctx_t* ctx ) {
 
   return;
 }
+
+// bool checkStatus( pfd_t pfd, pipe_status_t check_status ) {
+//   return pipes[ pfd ].status == check_status;
+// }
 
 // high-level SVC-interrupt handler (ctx: current context, id: system call id)
 void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
@@ -365,6 +398,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       }
 
       pcb_t child = {                                     // creates new child
+        .typedef  = USER,                                 // sets type to user program
         .pid      = child_pid,                            // sets childs PID
         .status   = STATUS_CREATED,                       // sets childs status to created
         .basePrio = 5,                                    // sets childs base priority
@@ -411,6 +445,8 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
         if ( ctx->gpr[ 1 ] == SIG_TERM ) {                   // if signal is termiante
           if ( pid != console_pid ) {                        // if PID is not console PID
             terminate( index );                              // terminates process as PCB[]
+            ctx->gpr[ 0 ] = EXIT_SUCCESS;                    // returns success
+            break;
           }
         }
       } else if ( pid == 0 ) {                               // if PID = 0 (terminate all)
@@ -418,11 +454,15 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
           for ( index_t i=console_i+1; i<PCB_LENGTH; i++ ) { // for each user process
             terminate( i );                                  // terminates process at PCB[i]
           }
+          ctx->gpr[ 0 ] = EXIT_SUCCESS;                      // returns success
+          break;
         }
       } else {
         printStr( "\nERROR: process not found \n" );         // else prints error not found
         break;
       }
+
+      ctx->gpr[ 0 ] = EXIT_FAILURE;                          // returns failure
 
       break;
     }
@@ -451,10 +491,13 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC exec_child() - executes child process with pipe
     case SYS_EXEC_CHILD: {
 
-      ctx->pc       = ctx->gpr[ 0 ]; // updates childs PC
-      ctx->sp       =           tos; // updates stack pointer
+      uint32_t   x = (uint32_t) ( ctx->gpr[ 0 ] );
+      pfd_t    pfd = (pfd_t)    ( ctx->gpr[ 1 ] );
 
-      ctx->gpr[ 0 ] = ctx->gpr[ 1 ]; // gives pipe to child
+      ctx->pc       = (uint32_t) x; // updates childs PC
+      ctx->sp       =          tos; // updates stack pointer
+
+      ctx->gpr[ 0 ] = (pfd_t) pfd ; // gives pipe to child
 
       break;
     }
@@ -462,8 +505,38 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC pipe_open() - opens pipe
     case SYS_PIPE_OPEN: {
 
-      pipes[0]      = 0; // initialises pipe
-      ctx->gpr[ 0 ] = 0; // returns pipe position of pipe in pipes
+      pfd_t pfd = 0;
+
+      pipe_t* pipe = &pipes[ pfd ];
+
+      pipe->data       =           0;
+      pipe->writer_end =          -1;
+      pipe->reader_end =          -1;
+      pipe->direction  =        OPEN;
+      pipe->status     = STATUS_OPEN;
+
+      ctx->gpr[ 0 ]    =         pfd; // returns pipe position of pipe in pipes
+
+      printStr( "\nPipe created:" ); printPipe( pfd );
+
+      break;
+    }
+
+    // SVC pipe_writer_end() - sets pipe writer end point
+    case SYS_PIPE_WRITER_END: {
+
+      pfd_t pfd = ( pfd_t ) ( ctx->gpr[ 0 ] );
+      pid_t pid = ( pid_t ) ( ctx->gpr[ 1 ] );
+
+      pipe_t*     pipe = &pipes[ pfd ];
+      pipe->writer_end = pid;
+
+      if ( pipe->reader_end > 0 ) {
+        pipe->status    = STATUS_WRITE;
+        pipe->direction =        WRITE;
+      }
+
+      ctx->gpr[ 1 ] = pfd;
 
       break;
     }
@@ -471,13 +544,53 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC pipe_write() - writes to pipe
     case SYS_PIPE_WRITE: {
 
-      int     pipe_id = ( int )( ctx->gpr[ 0 ] ); // gets position of pipe in pipes
-      int pipe_signal = ( int )( ctx->gpr[ 1 ] ); // gets signal to write to pipe
+      pfd_t            pfd = ( pfd_t )    ( ctx->gpr[ 0 ] ); // gets position of pipe in pipes
+      uint32_t pipe_signal = ( uint32_t ) ( ctx->gpr[ 1 ] ); // gets signal to write to pipe
+      pipe_t* pipe         =                  &pipes[ pfd ]; // gets pointer to pipe in pipes
 
-      pipe_t* pipe    =        &pipes[ pipe_id ]; // gets pointer to pipe in pipes
-      *pipe           =              pipe_signal; // writes signal to pipe
+      pipe->data      = pipe_signal;
+      pipe->status    = STATUS_READ;
+      pipe->direction =        READ;
 
-      ctx->gpr[ 0 ]   =                  pipe_id; // returns position of pipe in pipes
+      ctx->gpr[ 0 ]   =         pfd; // returns position of pipe in pipes
+
+      break;
+    }
+
+    // SVC pipe_writable() - gets if pipe is waiting for write
+    case SYS_PIPE_WRITABLE: {
+
+      pfd_t pfd      = ( pfd_t )( ctx->gpr[ 0 ] );                              // gets pipe location in pipe
+      pipe_t*   pipe =              &pipes[ pfd ];
+
+      if ( pipe->status == STATUS_WRITE ) {
+        ctx->gpr[ 0 ] =  ( bool ) ( true );
+      }
+      else if ( pipe->direction >= WRITE ) {
+        ctx->gpr[ 0 ] =  ( bool ) ( true );
+      }
+      else {
+        ctx->gpr[ 0 ] = ( bool ) ( false );
+      }
+
+      break;
+    }
+
+    // SVC pipe_reader_end() - sets pipe reader end point
+    case SYS_PIPE_READER_END: {
+
+      pfd_t pfd = ( pfd_t ) ( ctx->gpr[ 0 ] );
+      pid_t pid = ( pid_t ) ( ctx->gpr[ 1 ] );
+
+      pipe_t* pipe     = &pipes[ pfd ];
+      pipe->reader_end =           pid;
+
+      if ( pipe->writer_end > 0 ) {
+        pipe->status    = STATUS_WRITE;
+        pipe->direction =        WRITE;
+      };
+
+      ctx->gpr[ 1 ] = pfd;
 
       break;
     }
@@ -485,12 +598,34 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC pipe_read() - reads from pipe
     case SYS_PIPE_READ: {
 
-      int     pipe_i       = ( int )( ctx->gpr[ 0 ] ); // gets position of pipe in pipes
+      pfd_t            pfd = ( pfd_t )    ( ctx->gpr[ 0 ] ); // gets position of pipe in pipes
+      uint32_t pipe_signal = ( uint32_t ) ( ctx->gpr[ 1 ] ); // gets signal to write to pipe
+      pipe_t* pipe         =                  &pipes[ pfd ]; // gets pointer to pipe in pipes
 
-      pipe_t* pipe         =         &pipes[ pipe_i ]; // gets pointer to pipe in pipes
-      int     pipe_signal  =                    *pipe; // reads from pipe
+      pipe_signal     =   pipe->data;
+      pipe->status    = STATUS_WRITE;
+      pipe->direction =        WRITE;
 
-      ctx->gpr[ 0 ]        =              pipe_signal; // returns signal from pipe
+      ctx->gpr[ 0 ]   =  pipe_signal; // returns signal from pipe
+
+      break;
+    }
+
+    // SVC pipe_readable - gets if pipe is waiting for read
+    case SYS_PIPE_READABLE: {
+
+      pfd_t pfd      = ( pfd_t )( ctx->gpr[ 0 ] );                              // gets pipe location in pipe
+      pipe_t*   pipe =              &pipes[ pfd ];
+
+      if ( pipe->status == STATUS_READ ) {
+        ctx->gpr[ 0 ] =  ( bool ) ( true );
+      }
+      else if ( pipe->direction <= READ ) {
+        ctx->gpr[ 0 ] =  ( bool ) ( true );
+      }
+      else {
+        ctx->gpr[ 0 ] = ( bool ) ( false );
+      }
 
       break;
     }

@@ -81,58 +81,102 @@ void exit( int x ) {
 //________________________________________________________________________
 ////////////////////////////////// PIPES //////////////////////////////////
 
-void exec_child( const void* x, pipe_t pipe ) {
+void exec_child( const void* x, pfd_t pfd ) {
   asm volatile( "mov r0, %1 \n" // assign r0 = x
-                "mov r1, %2 \n" // assign r1 = pipe
+                "mov r1, %2 \n" // assign r1 = pfd
                 "svc %0     \n" // make system call SYS_EXEC
               :
-              : "I" (SYS_EXEC_CHILD), "r" (x), "r" (pipe)
+              : "I" (SYS_EXEC_CHILD), "r" (x), "r" (pfd)
               : "r0", "r1" );
-
   return;
 }
 
-pipe_t pipe_open() {
-
-  pid_t r;
-
+pfd_t pipe_open() {
+  pfd_t r;
   asm volatile( "svc %1     \n" // make system call SYS_READ
                 "mov %0, r0 \n" // assign r= r0
               : "=r" (r)
               : "I" (SYS_PIPE_OPEN)
               : "r0" );
-
   return r;
-
 }
 
-pipe_t pipe_write( pipe_t pipe, int pipe_signal ) {
-
-  pipe_t r;
-
-  asm volatile( "mov r0, %2 \n" // assign r0 = pipe
-                "mov r1, %3 \n" // assign r1 = pipe_signal
-                "svc %1     \n" // make system call SYS_READ
-                "mov %0, r0 \n" // assign r  = r0
+pfd_t pipe_writer_end( pfd_t pfd, pid_t pid ) {
+  pfd_t r;
+  asm volatile( "mov r0, %2 \n"
+                "mov r1, %3 \n"
+                "svc %1     \n"
+                "mov %0, r0 \n"
               : "=r" (r)
-              : "I" (SYS_PIPE_WRITE),  "r" (pipe), "r" (pipe_signal)
+              : "I" (SYS_PIPE_WRITER_END), "r" (pfd), "r" (pid)
               : "r0", "r1" );
-
   return r;
 }
 
-int pipe_read( pipe_t pipe ) {
+pfd_t pipe_write( pfd_t pfd, uint32_t pipe_signal ) {
+  pfd_t r;
+  asm volatile( "mov r0, %2 \n" // assign r0 = pfd
+                "mov r1, %3 \n" // assign r1 = pipe_signal
+                "svc %1     \n" // make system call SYS_WRITE
+                "mov %0, r0 \n"
+              : "=r" (r)
+              : "I" (SYS_PIPE_WRITE), "r" (pfd), "r" (pipe_signal)
+              : "r0", "r1" );
+  return r;
+}
 
+bool pipe_writable( pfd_t pfd ) {
+  bool r;
+  asm volatile( "mov r0, %2 \n" // assign r0 = pfd
+                "svc %1     \n" // make system call SYS_PIPE_READABLE
+                "mov %0, r0 \n" // assign r  = r0
+              : "=r" (r)
+              : "I" (SYS_PIPE_WRITABLE), "r" (pfd)
+              : "r0" );
+  return r;
+}
+
+void wait_for_write( pfd_t pfd ) {
+  while ( !pipe_writable( pfd ) ) { continue; }
+}
+
+pfd_t pipe_reader_end( pfd_t pfd, pid_t pid ) {
+  pfd_t r;
+  asm volatile( "mov r0, %2 \n"
+                "mov r1, %3 \n"
+                "svc %1     \n"
+                "mov %0, r0 \n"
+              : "=r" (r)
+              : "I" (SYS_PIPE_READER_END), "r" (pfd), "r" (pid)
+              : "r0", "r1" );
+  return r;
+}
+
+int pipe_read( pfd_t pfd, uint32_t pipe_signal ) {
   int r;
-
-  asm volatile( "mov r0, %2 \n" // assign r0 = pipe
+  asm volatile( "mov r0, %2 \n" // assign r0 = pfd
+                "mov r1, %3 \n"
                 "svc %1     \n" // make system call SYS_READ
                 "mov %0, r0 \n" // assign r  = r0
               : "=r" (r)
-              : "I" (SYS_PIPE_READ),  "r" (pipe)
-              : "r0" );
-
+              : "I" (SYS_PIPE_READ), "r" (pfd), "r" (pipe_signal)
+              : "r0", "r1" );
   return r;
+}
+
+bool pipe_readable( pfd_t pfd ) {
+  bool r;
+  asm volatile( "mov r0, %2 \n" // assign r0 = pfd
+                "svc %1     \n" // make system call SYS_PIPE_READABLE
+                "mov %0, r0 \n" // assign r  = r0
+              : "=r" (r)
+              : "I" (SYS_PIPE_READABLE),  "r" (pfd)
+              : "r0" );
+  return r;
+}
+
+void wait_for_read( pfd_t pfd ) {
+  while ( !pipe_readable( pfd ) ) { continue; }
 }
 
 //________________________________________________________________________
@@ -179,6 +223,23 @@ void itoa( char* r, int x ) {
   if( x < 0 ) {
     *p-- = '-';
   }
+
+  return;
+}
+
+void sysPrintString( char* string ) {
+
+  write ( STDOUT_FILENO, string, strlen(string) );
+
+  return;
+}
+
+void sysPrintInt( int n ) {
+
+  // write ( STDOUT_FILENO, "\npint\n", 6 )
+  char* string;
+  itoa( string, n );
+  sysPrintString( string );
 
   return;
 }
