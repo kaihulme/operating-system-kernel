@@ -8,7 +8,7 @@
 #include "hilevel.h"
 
 // mechanisms for storing processes and pipes between them
-pcb_t pcb[ PCB_LENGTH ]; pipe_t pipes[ PFDS_LENGTH ];
+pcb_t pcb[ PCB_LENGTH ]; pipe_t pfds[ PFDS_LENGTH ];
 pcb_t* current = NULL;
 
 // prints a string to UART (string: string to print to UART)
@@ -56,6 +56,18 @@ index_t findFreePCB() {
   return -1;                                                          // returns -1 for error: PCB full
 }
 
+// returns the index of the first free position in PCB
+pfd_t findFreePipe() {
+
+  for ( pfd_t i=0; i<PFDS_LENGTH; i++ ) {                            // for each in PCB
+    if ( pfds[ i ].status == STATUS_CLOSED ) { // if PCB is free
+      return i;                                                       // returns position of free PCB
+    }
+  }
+
+  return -1;                                                          // returns -1 for error: PCB full
+}
+
 // generate unique PID for process
 pid_t generatePID() {
 
@@ -93,9 +105,9 @@ void dispatch( ctx_t* ctx, pcb_t* prev, pcb_t* next ) {
     n =                        '0' + next->pid;       // gets next PID as char
   }
 
-  printStr( "\nContext Switch: [" );                  // prints context switch to UART
-  PL011_putc( UART0, p, true ); printStr( "] -> [" ); // prints current PID to UART
-  PL011_putc( UART0, n, true ); printStr( "]   \n" ); // prints next PID to UART
+  // printStr( "\nContext Switch: [" );                  // prints context switch to UART
+  // PL011_putc( UART0, p, true ); printStr( "] -> [" ); // prints current PID to UART
+  // PL011_putc( UART0, n, true ); printStr( "]   \n" ); // prints next PID to UART
 
   current = next;                                     // sets current PCB to next PCB
 
@@ -128,47 +140,85 @@ void printProgram( index_t n ) {
 void printProcessTable() {
 
   // prints PCB table
-  printStr("            PROCESS TABLE: active pid = "); printInt( current->pid );
-  printStr("\n _________________________________________________\n");
-  printStr("| Program Type | PCB index | PID | Priority | Age |\n");
-  printStr("|--------------|-----------|-----|----------|-----|\n");
+  printStr("                     PROCESS TABLE: active pid = ");
+  printInt( current->pid );
+
+  printStr("\n ________________________________________________________________________\n");
+  printStr("| Program Type | PCB index | PID | Priority | Age |  Philosopher Status  |\n");
+  printStr("|--------------|-----------|-----|----------|-----|----------------------|\n");
 
   for ( int i=0; i<PCB_LENGTH; i++ ) {
     if ( pcb[i].status != STATUS_TERMINATED && pcb[i].pid > 0 ) {
 
-      if ( i == 0 ) { printStr( "|   console    |     " ); }
-      else          { printStr( "|     user     |     " ); }
+      if ( pcb[i].type == CONSOLE )          printStr( "|   console    |     " );
+      else if ( pcb[i].type == USER )        printStr( "|     user     |     " );
+      else if ( pcb[i].type == WAITER )      printStr( "|    waiter    |     " );
+      else if ( pcb[i].type == PHILOSOPHER ) printStr( "|  philosopher |     " );
+      else                                   printStr( "|    unknown   |     " );
 
-      printInt( i ); printStr( "     |  " );  printInt( pcb[i].pid );
-      printStr( "  |    " );                 printInt( pcb[i].prio );
+      printInt( i );
+      if ( i < 10 ) printStr( "     |  " );
+      else           printStr( "    |  " );
 
-      if (pcb[i].prio < 10 ) { printStr("     |  "); }
-      else                   { printStr("    |  "); }
+      printInt( pcb[i].pid );
+      if ( pcb[i].pid < 10 ) printStr( "  |    " );
+      else                    printStr( " |    " );
 
-      printInt( pcb[i].prio - pcb[i].basePrio ); printStr( "  |\n" );
+      printInt( pcb[i].prio );
+      if (pcb[i].prio < 10 )  printStr("     |  ");
+      else                     printStr("    |  ");
+
+      prio_t age = pcb[i].prio - pcb[i].basePrio;
+      printInt( age );
+      if ( age < 10 ) printStr( "  | " );
+      else             printStr( " | " );
+
+      if      ( pcb[ i ].philo_status == STATUS_NA )    printStr( "                     |\n" );
+      else if ( pcb[ i ].philo_status == STATUS_EAT )   printStr( "       eating        |\n" );
+      else if ( pcb[ i ].philo_status == STATUS_THINK ) printStr( "      thinking       |\n" );
+      else                                              printStr( "       UNKNOWN       |\n" );
 
     }
   }
 
-  printStr("|______________|___________|_____|__________|_____|\n");
+  printStr("|______________|___________|_____|__________|_____|______________________|\n");
 
   return;
 }
 
 void printPipe( pfd_t pfd ) {
 
-  printStr( "\nPipe[" );                    printInt( pfd );
-  printStr( "]: Data: " );    printInt( pipes[ pfd ].data );
-  printStr( " Writer-end: " ); printInt( pipes[ pfd ].writer_end );
-  printStr( " Reader-end: " );  printInt( pipes[ pfd ].reader_end );
+  if ( pfd > 0 ) {
+      printStr( "\nPipe[" );                    printInt( pfd );
+      printStr( "]: Data: " );    printInt( pfds[ pfd ].data );
+      printStr( " Writer-end: " ); printInt( pfds[ pfd ].writer_end );
+      printStr( " Reader-end: " );  printInt( pfds[ pfd ].reader_end );
+      printStr( ", Status: " );
+      if      ( pfds[ pfd ].status == STATUS_OPEN )      printStr( "OPEN" );
+      else if ( pfds[ pfd ].status == STATUS_READ )      printStr( "READ" );
+      else if ( pfds[ pfd ].status == STATUS_WRITE )    printStr( "WRITE" );
+      else if ( pfds[ pfd ].status == STATUS_CLOSED )  printStr( "CLOSED" );
+      else                                             printStr( "UNKNOWN" );
+  }
 
-  printStr( ", Status: " );
+  else if ( pfd == 0 ) {
+    for ( pfd_t i=0; i<PFDS_LENGTH; i++ ) {
+      if ( pfds[ i ].status != STATUS_CLOSED ) {
+        printStr( "\nPipe[" );                    printInt( i );
+        printStr( "]: Data: " );    printInt( pfds[ i ].data );
+        printStr( " Writer-end: " ); printInt( pfds[ i ].writer_end );
+        printStr( " Reader-end: " );  printInt( pfds[ i ].reader_end );
+        printStr( ", Status: " );
+        if      ( pfds[ i ].status == STATUS_OPEN )      printStr( "OPEN" );
+        else if ( pfds[ i ].status == STATUS_READ )      printStr( "READ" );
+        else if ( pfds[ i ].status == STATUS_WRITE )    printStr( "WRITE" );
+        else if ( pfds[ i ].status == STATUS_CLOSED )  printStr( "CLOSED" );
+        else                                             printStr( "UNKNOWN" );
+      }
+    }
+  }
 
-  if      ( pipes[ pfd ].status == STATUS_OPEN )      printStr( "OPEN\n" );
-  else if ( pipes[ pfd ].status == STATUS_READ )      printStr( "READ\n" );
-  else if ( pipes[ pfd ].status == STATUS_WRITE )    printStr( "WRITE\n" );
-  else if ( pipes[ pfd ].status == STATUS_CLOSED )  printStr( "CLOSED\n" );
-  else                                             printStr( "UNKNOWN\n" );
+  printStr("\n");
 
   return;
 }
@@ -211,7 +261,7 @@ void schedule_priorityBased( ctx_t* ctx ) {
 
   printProcessTable();
 
-  printPipe( 0 );
+  // printPipe( 0 );
 
   if ( current_i != next_i ) {
     dispatch(ctx, &pcb[ current_i ], &pcb[ next_i ]);
@@ -314,6 +364,7 @@ void hilevel_handler_rst( ctx_t* ctx ) {
     .type         =                       CONSOLE,                        // sets type to console
     .pid          =                   console_pid,                        // sets console PID to 1
     .status       =                STATUS_CREATED,                        // sets console status to created
+    .philo_status =                     STATUS_NA,                        // status for philosophers
     .ctx.cpsr     =                          0x50,                        // sets console to SVC mode with IRQ & FIQ enabled
     .ctx.pc       = ( uint32_t )( &main_console ),                        // sets console PC to main()
     .ctx.sp       = ( uint32_t )( &tos_console  ),                        // sets console stack pointer to console top-of-stack pointer
@@ -338,11 +389,11 @@ void hilevel_handler_rst( ctx_t* ctx ) {
   GICD0->CTLR         = 0x00000001;                                       // enables GIC distributor
 
   for ( pfd_t pfd=0; pfd<PFDS_LENGTH; pfd++ ) {
-    pipes[ pfd ].data       =             0;
-    pipes[ pfd ].writer_end =            -1;
-    pipes[ pfd ].reader_end =            -1;
-    pipes[ pfd ].direction  =             0;
-    pipes[ pfd ].status     = STATUS_CLOSED;
+    pfds[ pfd ].data       =             0;
+    pfds[ pfd ].writer_end =            -1;
+    pfds[ pfd ].reader_end =            -1;
+    pfds[ pfd ].direction  =             0;
+    pfds[ pfd ].status     = STATUS_CLOSED;
   }
 
   return;
@@ -364,9 +415,6 @@ void hilevel_handler_irq( ctx_t* ctx ) {
   return;
 }
 
-// bool checkStatus( pfd_t pfd, pipe_status_t check_status ) {
-//   return pipes[ pfd ].status == check_status;
-// }
 
 // high-level SVC-interrupt handler (ctx: current context, id: system call id)
 void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
@@ -387,7 +435,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC fork() - create new child process -> return child PID in parent and 0 in child
     case SYS_FORK: {
 
-      printStr( "\nSYS_FORK" );                           // prints fork to UART
+      // printStr( "\nSYS_FORK" );                           // prints fork to UART
 
       pid_t   child_pid = generatePID();                  // generates unique PID
       index_t child_i   = findFreePCB();                  // calculates position in PCB
@@ -398,7 +446,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       }
 
       pcb_t child = {                                     // creates new child
-        .typedef  = USER,                                 // sets type to user program
+        .type     = USER,                                 // sets type to user program
         .pid      = child_pid,                            // sets childs PID
         .status   = STATUS_CREATED,                       // sets childs status to created
         .basePrio = 5,                                    // sets childs base priority
@@ -413,8 +461,8 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       ctx->gpr[ 0 ]               = child_pid;            // return from fork in parent -> child_pid
       tos                        += P_STACKSIZE;          // updates top-of-stack pointer
 
-      printStr( "\nSUCCESS: user program created \n" );   // prints successful fork to UART
-      printProgram( child_i );                            // prints child to UART
+      // printStr( "\nSUCCESS: user program created \n" );   // prints successful fork to UART
+      // printProgram( child_i );                            // prints child to UART
 
       break;
     }
@@ -426,6 +474,41 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       ctx->sp =           tos; // updates stack pointer
 
       break;
+    }
+
+    // SVC get_pid() - returns pid of current processes
+    case SYS_GET_PID: {
+
+      ctx->gpr[ 0 ] = current->pid;
+
+      break;
+    }
+
+    case SYS_SET_TYPE: {
+
+      pid_t     pid  = ( pid_t )     ctx->gpr[ 0 ];
+      program_t type = ( program_t ) ctx->gpr[ 1 ];
+
+      pcb[ findByPID( pid ) ].type = type;
+
+      ctx->gpr[ 0 ] = pcb[ findByPID( pid ) ].type;
+
+      break;
+
+    }
+
+    case SYS_SET_PHILO_STATUS: {
+
+      pid_t        pid = ( pid_t ) ctx->gpr[ 0 ];
+      int philo_status = ( int )   ctx->gpr[ 1 ];
+
+      if ( philo_status > THINK ) pcb[ findByPID( pid ) ].philo_status =   STATUS_EAT;
+      else                        pcb[ findByPID( pid ) ].philo_status = STATUS_THINK;
+
+      ctx->gpr[ 0 ] = philo_status;
+
+      break;
+
     }
 
      //________________________________________________________________________
@@ -494,8 +577,8 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       uint32_t   x = (uint32_t) ( ctx->gpr[ 0 ] );
       pfd_t    pfd = (pfd_t)    ( ctx->gpr[ 1 ] );
 
-      ctx->pc       = (uint32_t) x; // updates childs PC
-      ctx->sp       =          tos; // updates stack pointer
+      ctx->pc      = (uint32_t) x; // updates childs PC
+      ctx->sp      =          tos; // updates stack pointer
 
       ctx->gpr[ 0 ] = (pfd_t) pfd ; // gives pipe to child
 
@@ -505,9 +588,14 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     // SVC pipe_open() - opens pipe
     case SYS_PIPE_OPEN: {
 
-      pfd_t pfd = 0;
+      pfd_t pfd = findFreePipe();
 
-      pipe_t* pipe = &pipes[ pfd ];
+      if ( pfd < 0 ) {
+        printStr( "\nERROR: PFDS is full \n" );            // break if PCB is full
+        break;
+      }
+
+      pipe_t* pipe = &pfds[ pfd ];
 
       pipe->data       =           0;
       pipe->writer_end =          -1;
@@ -517,7 +605,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
 
       ctx->gpr[ 0 ]    =         pfd; // returns pipe position of pipe in pipes
 
-      printStr( "\nPipe created:" ); printPipe( pfd );
+      //printStr( "\nPipe created:" ); printPipe( pfd );
 
       break;
     }
@@ -528,15 +616,21 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       pfd_t pfd = ( pfd_t ) ( ctx->gpr[ 0 ] );
       pid_t pid = ( pid_t ) ( ctx->gpr[ 1 ] );
 
-      pipe_t*     pipe = &pipes[ pfd ];
-      pipe->writer_end = pid;
+      pipe_t* pipe = &pfds[ pfd ];
 
-      if ( pipe->reader_end > 0 ) {
-        pipe->status    = STATUS_WRITE;
-        pipe->direction =        WRITE;
+      if ( pipe->writer_end < 0 ) {
+        pipe->writer_end = pid;
+
+        if ( pipe->reader_end > 0 ) {
+          pipe->status    = STATUS_READ;
+          pipe->direction =        READ;
+        };
+
+        ctx->gpr[ 1 ] = pfd;
+
+      } else {
+        ctx->gpr[ 1 ] = -1;
       }
-
-      ctx->gpr[ 1 ] = pfd;
 
       break;
     }
@@ -546,7 +640,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
 
       pfd_t            pfd = ( pfd_t )    ( ctx->gpr[ 0 ] ); // gets position of pipe in pipes
       uint32_t pipe_signal = ( uint32_t ) ( ctx->gpr[ 1 ] ); // gets signal to write to pipe
-      pipe_t* pipe         =                  &pipes[ pfd ]; // gets pointer to pipe in pipes
+      pipe_t*  pipe        =                   &pfds[ pfd ]; // gets pointer to pipe in pipes
 
       pipe->data      = pipe_signal;
       pipe->status    = STATUS_READ;
@@ -561,7 +655,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     case SYS_PIPE_WRITABLE: {
 
       pfd_t pfd      = ( pfd_t )( ctx->gpr[ 0 ] );                              // gets pipe location in pipe
-      pipe_t*   pipe =              &pipes[ pfd ];
+      pipe_t*   pipe =              &pfds[ pfd ];
 
       if ( pipe->status == STATUS_WRITE ) {
         ctx->gpr[ 0 ] =  ( bool ) ( true );
@@ -582,15 +676,21 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
       pfd_t pfd = ( pfd_t ) ( ctx->gpr[ 0 ] );
       pid_t pid = ( pid_t ) ( ctx->gpr[ 1 ] );
 
-      pipe_t* pipe     = &pipes[ pfd ];
-      pipe->reader_end =           pid;
+      pipe_t* pipe = &pfds[ pfd ];
 
-      if ( pipe->writer_end > 0 ) {
-        pipe->status    = STATUS_WRITE;
-        pipe->direction =        WRITE;
-      };
+      if ( pipe->reader_end < 0 ) {
+        pipe->reader_end = pid;
 
-      ctx->gpr[ 1 ] = pfd;
+        if ( pipe->writer_end > 0 ) {
+          pipe->status    = STATUS_WRITE;
+          pipe->direction =        WRITE;
+        };
+
+        ctx->gpr[ 1 ] = pfd;
+
+      } else {
+        ctx->gpr[ 1 ] = -1;
+      }
 
       break;
     }
@@ -600,13 +700,13 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
 
       pfd_t            pfd = ( pfd_t )    ( ctx->gpr[ 0 ] ); // gets position of pipe in pipes
       uint32_t pipe_signal = ( uint32_t ) ( ctx->gpr[ 1 ] ); // gets signal to write to pipe
-      pipe_t* pipe         =                  &pipes[ pfd ]; // gets pointer to pipe in pipes
+      pipe_t* pipe         =                  &pfds[ pfd ];  // gets pointer to pipe in pipes
 
       pipe_signal     =   pipe->data;
       pipe->status    = STATUS_WRITE;
       pipe->direction =        WRITE;
 
-      ctx->gpr[ 0 ]   =  pipe_signal; // returns signal from pipe
+      ctx->gpr[ 0 ]   =  pipe_signal;                        // returns signal from pipe
 
       break;
     }
@@ -615,7 +715,7 @@ void hilevel_handler_svc( ctx_t* ctx, uint32_t id ) {
     case SYS_PIPE_READABLE: {
 
       pfd_t pfd      = ( pfd_t )( ctx->gpr[ 0 ] );                              // gets pipe location in pipe
-      pipe_t*   pipe =              &pipes[ pfd ];
+      pipe_t*   pipe =              &pfds[ pfd ];
 
       if ( pipe->status == STATUS_READ ) {
         ctx->gpr[ 0 ] =  ( bool ) ( true );

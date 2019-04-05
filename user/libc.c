@@ -20,7 +20,6 @@ void yield() {
 
 int fork() {
   int r;
-
   asm volatile( "svc %1     \n" // make system call SYS_FORK
                 "mov %0, r0 \n" // assign r  = r0
               : "=r" (r)
@@ -49,6 +48,40 @@ void nice( int pid, int x ) {
               : "r0", "r1" );
 
   return;
+}
+
+pid_t get_pid() {
+  pid_t r;
+  asm volatile( "svc %1     \n" // make system call SYS_PID
+                "mov %0, r0 \n" // assign r0 = r
+              : "=r" (r)
+              : "I"  (SYS_GET_PID)
+              : "r0" );
+  return r;
+}
+
+pid_t set_type( pid_t pid, program_t type ) {
+  pfd_t r;
+  asm volatile( "mov r0, %2 \n"
+                "mov r1, %3 \n"
+                "svc %1     \n"
+                "mov %0, r0 \n"
+              : "=r" (r)
+              : "I" (SYS_SET_TYPE), "r" (pid), "r" (type)
+              : "r0", "r1" );
+  return r;
+}
+
+int set_philo_status( pid_t pid, int philo_status ) {
+  int r;
+  asm volatile( "mov r0, %2 \n"
+                "mov r1, %3 \n"
+                "svc %1     \n"
+                "mov %0, r0 \n"
+              : "=r" (r)
+              : "I" (SYS_SET_PHILO_STATUS), "r" (pid), "r" (philo_status)
+              : "r0", "r1" );
+  return r;
 }
 
 //________________________________________________________________________
@@ -136,10 +169,6 @@ bool pipe_writable( pfd_t pfd ) {
   return r;
 }
 
-void wait_for_write( pfd_t pfd ) {
-  while ( !pipe_writable( pfd ) ) { continue; }
-}
-
 pfd_t pipe_reader_end( pfd_t pfd, pid_t pid ) {
   pfd_t r;
   asm volatile( "mov r0, %2 \n"
@@ -173,10 +202,6 @@ bool pipe_readable( pfd_t pfd ) {
               : "I" (SYS_PIPE_READABLE),  "r" (pfd)
               : "r0" );
   return r;
-}
-
-void wait_for_read( pfd_t pfd ) {
-  while ( !pipe_readable( pfd ) ) { continue; }
 }
 
 //________________________________________________________________________

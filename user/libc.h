@@ -15,8 +15,9 @@
 
 // Define a type that that captures a Process IDentifier (PID).
 
-typedef int  pid_t;
-typedef int  pfd_t;
+typedef int     pid_t;
+typedef int     pfd_t;
+typedef int program_t;
 
 /* The definitions below capture symbolic constants within these classes:
  *
@@ -32,22 +33,25 @@ typedef int  pfd_t;
  * to act as a limited model of similar concepts.
  */
 
-#define SYS_YIELD           ( 0x00 )
-#define SYS_WRITE           ( 0x01 )
-#define SYS_READ            ( 0x02 )
-#define SYS_FORK            ( 0x03 )
-#define SYS_EXIT            ( 0x04 )
-#define SYS_EXEC            ( 0x05 )
-#define SYS_KILL            ( 0x06 )
-#define SYS_NICE            ( 0x07 )
-#define SYS_EXEC_CHILD      ( 0x08 )
-#define SYS_PIPE_OPEN       ( 0x09 )
-#define SYS_PIPE_WRITE      ( 0x10 )
-#define SYS_PIPE_READ       ( 0x11 )
-#define SYS_PIPE_WRITABLE   ( 0x12 )
-#define SYS_PIPE_READABLE   ( 0x13 )
-#define SYS_PIPE_WRITER_END ( 0x14 )
-#define SYS_PIPE_READER_END ( 0x15 )
+#define SYS_YIELD            ( 0x00 )
+#define SYS_WRITE            ( 0x01 )
+#define SYS_READ             ( 0x02 )
+#define SYS_FORK             ( 0x03 )
+#define SYS_EXIT             ( 0x04 )
+#define SYS_EXEC             ( 0x05 )
+#define SYS_KILL             ( 0x06 )
+#define SYS_NICE             ( 0x07 )
+#define SYS_EXEC_CHILD       ( 0x08 )
+#define SYS_PIPE_OPEN        ( 0x09 )
+#define SYS_PIPE_WRITE       ( 0x10 )
+#define SYS_PIPE_READ        ( 0x11 )
+#define SYS_PIPE_WRITABLE    ( 0x12 )
+#define SYS_PIPE_READABLE    ( 0x13 )
+#define SYS_PIPE_WRITER_END  ( 0x14 )
+#define SYS_PIPE_READER_END  ( 0x15 )
+#define SYS_GET_PID          ( 0x16 )
+#define SYS_SET_TYPE         ( 0x17 )
+#define SYS_SET_PHILO_STATUS ( 0x18 )
 
 #define SIG_TERM      ( 0x00 )
 #define SIG_QUIT      ( 0x01 )
@@ -59,6 +63,17 @@ typedef int  pfd_t;
 #define STDOUT_FILENO ( 1 )
 #define STDERR_FILENO ( 2 )
 
+#define PFDS_LENGTH ( 16 )
+
+// type
+#define CONSOLE     ( 10 )
+#define USER        ( 11 )
+#define WAITER      ( 12 )
+#define PHILOSOPHER ( 13 )
+
+#define THINK ( 0 )
+#define EAT   ( 1 )
+
 //////////////////////////////// EXECUTION ////////////////////////////////
 
 // cooperatively yield control of processor, i.e., invoke the scheduler
@@ -67,9 +82,14 @@ extern void yield();
 extern int  fork();
 // perform exec, i.e., start executing program at address x
 extern void exec( const void* x );
-
 // for process identified by pid, set  priority to x
 extern void nice( pid_t pid, int x );
+// gets pid of current process
+extern pid_t get_pid();
+// set type of pcb with given pid
+extern program_t set_type( pid_t pid, program_t type);
+// set type of pcb with given pid
+extern int set_philo_status( pid_t pid, int philo_status);
 
  //________________________________________________________________________
 /////////////////////////////// TERMINATION ///////////////////////////////
@@ -93,8 +113,6 @@ extern pfd_t pipe_writer_end( pfd_t pfd, pid_t pid );
 extern pfd_t pipe_write( pfd_t pfd, uint32_t pipe_signal );
 // gets if pipe is waiting for writes
 extern bool pipe_writable( pfd_t pfd );
-// waits for pipe to need write
-extern void wait_for_write( pfd_t pfd );
 
 // sets pfd as pipe end point
 extern pfd_t pipe_reader_end( pfd_t pfd, pid_t pid );
@@ -102,8 +120,6 @@ extern pfd_t pipe_reader_end( pfd_t pfd, pid_t pid );
 extern int pipe_read( pfd_t pfd, uint32_t pipe_signal );
 // gets if pipe is waiting for read
 extern bool pipe_readable( pfd_t pfd );
-// waits for pipe to need read
-extern void wait_for_read( pfd_t pfd );
 
  //________________________________________________________________________
 /////////////////////////////////// I/O ///////////////////////////////////

@@ -28,20 +28,13 @@
 
 #include "lolevel.h"
 
-#define PCB_LENGTH    ( 10 )         // max no. of processes
-#define PFDS_LENGTH   ( 1 )          // max no. of pipes
+#define PCB_LENGTH    ( 20 )         // max no. of processes
 #define P_STACKSIZE   ( 0x00001000 ) // stack size for user processes
 
 // direction
 #define OPEN   ( 0 )
 #define WRITE  ( 1 )
 #define READ  ( -1 )
-
-// type
-#define CONSOLE     ( 10 )
-#define USER        ( 11 )
-#define WAITER      ( 12 )
-#define PHILOSOPHER ( 13 )
 
 /* The kernel source code is made simpler and more consistent by using
  * some human-readable type definitions:
@@ -60,7 +53,6 @@ typedef int     index_t;
 typedef int       pid_t;
 typedef int      prio_t;
 typedef int direction_t;
-typedef int   program_t;
 
 typedef enum {
   STATUS_CREATED,
@@ -78,18 +70,25 @@ typedef enum {
   STATUS_CLOSED
 } pipe_status_t;
 
+typedef enum {
+  STATUS_NA,
+  STATUS_EAT,
+  STATUS_THINK
+} philo_status_t;
+
 typedef struct {
   uint32_t cpsr, pc, gpr[ 13 ], sp, lr;
 } ctx_t;
 
 typedef struct {
-       program_t     type;
-           pid_t      pid;
-    pcb_status_t   status;
-           ctx_t      ctx;
-        uint32_t      tos;
-          prio_t basePrio;
-          prio_t     prio;
+       program_t         type;
+           pid_t          pid;
+    pcb_status_t       status;
+  philo_status_t philo_status;
+           ctx_t          ctx;
+        uint32_t          tos;
+          prio_t     basePrio;
+          prio_t         prio;
 } pcb_t;
 
 typedef struct {
